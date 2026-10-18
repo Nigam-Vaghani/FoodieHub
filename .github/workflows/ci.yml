@@ -1,0 +1,68 @@
+name: FoodieHub CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-tests:
+    name: Backend Microservice Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/user-service/requirements.txt
+          pip install -r services/restaurant-service/requirements.txt
+          pip install -r services/order-service/requirements.txt
+          pip install -r services/delivery-service/requirements.txt
+          pip install -r services/notification-service/requirements.txt
+
+      - name: Run Microservice Test Suites & E2E Integration
+        run: |
+          python run_tests.py
+
+  frontend-checks:
+    name: Frontend TypeScript & Vite Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Verify TypeScript & Build SPA Bundle
+        run: npm run build
+
+  docker-compose-validation:
+    name: Docker Compose Build Verification
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-checks]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
+
+      - name: Build All Container Images
+        run: docker compose build

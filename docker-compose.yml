@@ -1,0 +1,226 @@
+# FoodieHub Cloud-Native Docker Compose Orchestration
+
+services:
+  # ============================================================================
+  # Nginx API Gateway (Ingress Reverse Proxy)
+  # ============================================================================
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: foodiehub-gateway
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      restaurant-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # Frontend Application (React + TypeScript + Vite SPA)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: foodiehub-frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # 1. User Microservice
+  # ============================================================================
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: foodiehub-user-service
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=user-service
+      - SERVICE_PORT=8001
+      - DATABASE_URL=sqlite:///./data/user.db
+      - JWT_SECRET=${JWT_SECRET:-foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!}
+      - JWT_ALGORITHM=HS256
+      - LOG_LEVEL=INFO
+    volumes:
+      - user_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # 2. Restaurant Microservice
+  # ============================================================================
+  restaurant-service:
+    build:
+      context: ./services/restaurant-service
+      dockerfile: Dockerfile
+    container_name: foodiehub-restaurant-service
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=restaurant-service
+      - SERVICE_PORT=8002
+      - DATABASE_URL=sqlite:///./data/restaurant.db
+      - JWT_SECRET=${JWT_SECRET:-foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!}
+      - JWT_ALGORITHM=HS256
+      - LOG_LEVEL=INFO
+    volumes:
+      - restaurant_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # 3. Notification Microservice
+  # ============================================================================
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: foodiehub-notification-service
+    ports:
+      - "8005:8005"
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=notification-service
+      - SERVICE_PORT=8005
+      - DATABASE_URL=sqlite:///./data/notification.db
+      - JWT_SECRET=${JWT_SECRET:-foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!}
+      - JWT_ALGORITHM=HS256
+      - LOG_LEVEL=INFO
+    volumes:
+      - notification_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8005/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # 4. Delivery Microservice
+  # ============================================================================
+  delivery-service:
+    build:
+      context: ./services/delivery-service
+      dockerfile: Dockerfile
+    container_name: foodiehub-delivery-service
+    ports:
+      - "8004:8004"
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=delivery-service
+      - SERVICE_PORT=8004
+      - DATABASE_URL=sqlite:///./data/delivery.db
+      - JWT_SECRET=${JWT_SECRET:-foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!}
+      - JWT_ALGORITHM=HS256
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+      - LOG_LEVEL=INFO
+    volumes:
+      - delivery_data:/app/data
+    depends_on:
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+  # ============================================================================
+  # 5. Order Microservice
+  # ============================================================================
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    container_name: foodiehub-order-service
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=order-service
+      - SERVICE_PORT=8003
+      - DATABASE_URL=sqlite:///./data/order.db
+      - JWT_SECRET=${JWT_SECRET:-foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!}
+      - JWT_ALGORITHM=HS256
+      - RESTAURANT_SERVICE_URL=http://restaurant-service:8002
+      - DELIVERY_SERVICE_URL=http://delivery-service:8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+      - USER_SERVICE_URL=http://user-service:8001
+      - LOG_LEVEL=INFO
+    volumes:
+      - order_data:/app/data
+    depends_on:
+      restaurant-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - foodiehub-network
+
+# ==============================================================================
+# Isolated Persistent Storage & Networking
+# ==============================================================================
+volumes:
+  user_data:
+    driver: local
+  restaurant_data:
+    driver: local
+  order_data:
+    driver: local
+  delivery_data:
+    driver: local
+  notification_data:
+    driver: local
+
+networks:
+  foodiehub-network:
+    driver: bridge
