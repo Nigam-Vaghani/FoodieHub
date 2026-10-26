@@ -1,0 +1,195 @@
+{
+  "family": "foodiehub-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "4096",
+  "executionRoleArn": "arn:aws:iam::415368001088:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "gateway",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/gateway:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "hostPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "gateway"
+        }
+      }
+    },
+    {
+      "name": "frontend",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/frontend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "frontend"
+        }
+      }
+    },
+    {
+      "name": "user-service",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/user-service:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8001,
+          "hostPort": 8001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "SERVICE_NAME", "value": "user-service" },
+        { "name": "SERVICE_PORT", "value": "8001" },
+        { "name": "DATABASE_URL", "value": "sqlite:///./data/user.db" },
+        { "name": "JWT_SECRET", "value": "foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!" },
+        { "name": "JWT_ALGORITHM", "value": "HS256" },
+        { "name": "LOG_LEVEL", "value": "INFO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "user-service"
+        }
+      }
+    },
+    {
+      "name": "restaurant-service",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/restaurant-service:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8002,
+          "hostPort": 8002,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "SERVICE_NAME", "value": "restaurant-service" },
+        { "name": "SERVICE_PORT", "value": "8002" },
+        { "name": "DATABASE_URL", "value": "sqlite:///./data/restaurant.db" },
+        { "name": "JWT_SECRET", "value": "foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!" },
+        { "name": "JWT_ALGORITHM", "value": "HS256" },
+        { "name": "LOG_LEVEL", "value": "INFO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "restaurant-service"
+        }
+      }
+    },
+    {
+      "name": "order-service",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/order-service:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8003,
+          "hostPort": 8003,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "SERVICE_NAME", "value": "order-service" },
+        { "name": "SERVICE_PORT", "value": "8003" },
+        { "name": "DATABASE_URL", "value": "sqlite:///./data/order.db" },
+        { "name": "JWT_SECRET", "value": "foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!" },
+        { "name": "JWT_ALGORITHM", "value": "HS256" },
+        { "name": "RESTAURANT_SERVICE_URL", "value": "http://127.0.0.1:8002" },
+        { "name": "DELIVERY_SERVICE_URL", "value": "http://127.0.0.1:8004" },
+        { "name": "NOTIFICATION_SERVICE_URL", "value": "http://127.0.0.1:8005" },
+        { "name": "USER_SERVICE_URL", "value": "http://127.0.0.1:8001" },
+        { "name": "LOG_LEVEL", "value": "INFO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "order-service"
+        }
+      }
+    },
+    {
+      "name": "delivery-service",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/delivery-service:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8004,
+          "hostPort": 8004,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "SERVICE_NAME", "value": "delivery-service" },
+        { "name": "SERVICE_PORT", "value": "8004" },
+        { "name": "DATABASE_URL", "value": "sqlite:///./data/delivery.db" },
+        { "name": "JWT_SECRET", "value": "foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!" },
+        { "name": "JWT_ALGORITHM", "value": "HS256" },
+        { "name": "NOTIFICATION_SERVICE_URL", "value": "http://127.0.0.1:8005" },
+        { "name": "LOG_LEVEL", "value": "INFO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "delivery-service"
+        }
+      }
+    },
+    {
+      "name": "notification-service",
+      "image": "415368001088.dkr.ecr.ap-south-1.amazonaws.com/foodiehub/notification-service:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8005,
+          "hostPort": 8005,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "SERVICE_NAME", "value": "notification-service" },
+        { "name": "SERVICE_PORT", "value": "8005" },
+        { "name": "DATABASE_URL", "value": "sqlite:///./data/notification.db" },
+        { "name": "JWT_SECRET", "value": "foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!" },
+        { "name": "JWT_ALGORITHM", "value": "HS256" },
+        { "name": "LOG_LEVEL", "value": "INFO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/foodiehub",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "notification-service"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'FoodieHub Microservices Deployment Stack on Amazon ECS Fargate'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where ECS tasks will be launched (select your default VPC)
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of at least two public subnet IDs in the selected VPC
+
+  ImageTag:
+    Type: String
+    Default: 'latest'
+    Description: Image tag to pull from ECR
+
+Resources:
+  # ==============================================================================
+  # 1. CloudWatch Logs
+  # ==============================================================================
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/foodiehub
+      RetentionInDays: 7
+
+  # ==============================================================================
+  # 2. Security Group
+  # ==============================================================================
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for FoodieHub ECS Fargate service
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow public HTTP ingress to Gateway
+
+  # ==============================================================================
+  # 3. IAM Execution Role
+  # ==============================================================================
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: foodiehub-ecsTaskExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ==============================================================================
+  # 4. ECS Cluster
+  # ==============================================================================
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: foodiehub-cluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+
+  # ==============================================================================
+  # 5. ECS Task Definition
+  # ==============================================================================
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: foodiehub-task
+      Cpu: '2048'
+      Memory: '4096'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: gateway
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/gateway:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: gateway
+
+        - Name: frontend
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/frontend:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              HostPort: 8080
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: frontend
+
+        - Name: user-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/user-service:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8001
+              HostPort: 8001
+              Protocol: tcp
+          Environment:
+            - Name: SERVICE_NAME
+              Value: user-service
+            - Name: SERVICE_PORT
+              Value: '8001'
+            - Name: DATABASE_URL
+              Value: sqlite:///./data/user.db
+            - Name: JWT_SECRET
+              Value: foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!
+            - Name: JWT_ALGORITHM
+              Value: HS256
+            - Name: LOG_LEVEL
+              Value: INFO
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: user-service
+
+        - Name: restaurant-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/restaurant-service:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8002
+              HostPort: 8002
+              Protocol: tcp
+          Environment:
+            - Name: SERVICE_NAME
+              Value: restaurant-service
+            - Name: SERVICE_PORT
+              Value: '8002'
+            - Name: DATABASE_URL
+              Value: sqlite:///./data/restaurant.db
+            - Name: JWT_SECRET
+              Value: foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!
+            - Name: JWT_ALGORITHM
+              Value: HS256
+            - Name: LOG_LEVEL
+              Value: INFO
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: restaurant-service
+
+        - Name: order-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/order-service:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8003
+              HostPort: 8003
+              Protocol: tcp
+          Environment:
+            - Name: SERVICE_NAME
+              Value: order-service
+            - Name: SERVICE_PORT
+              Value: '8003'
+            - Name: DATABASE_URL
+              Value: sqlite:///./data/order.db
+            - Name: JWT_SECRET
+              Value: foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!
+            - Name: JWT_ALGORITHM
+              Value: HS256
+            - Name: RESTAURANT_SERVICE_URL
+              Value: http://127.0.0.1:8002
+            - Name: DELIVERY_SERVICE_URL
+              Value: http://127.0.0.1:8004
+            - Name: NOTIFICATION_SERVICE_URL
+              Value: http://127.0.0.1:8005
+            - Name: USER_SERVICE_URL
+              Value: http://127.0.0.1:8001
+            - Name: LOG_LEVEL
+              Value: INFO
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: order-service
+
+        - Name: delivery-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/delivery-service:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8004
+              HostPort: 8004
+              Protocol: tcp
+          Environment:
+            - Name: SERVICE_NAME
+              Value: delivery-service
+            - Name: SERVICE_PORT
+              Value: '8004'
+            - Name: DATABASE_URL
+              Value: sqlite:///./data/delivery.db
+            - Name: JWT_SECRET
+              Value: foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!
+            - Name: JWT_ALGORITHM
+              Value: HS256
+            - Name: NOTIFICATION_SERVICE_URL
+              Value: http://127.0.0.1:8005
+            - Name: LOG_LEVEL
+              Value: INFO
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: delivery-service
+
+        - Name: notification-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/foodiehub/notification-service:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8005
+              HostPort: 8005
+              Protocol: tcp
+          Environment:
+            - Name: SERVICE_NAME
+              Value: notification-service
+            - Name: SERVICE_PORT
+              Value: '8005'
+            - Name: DATABASE_URL
+              Value: sqlite:///./data/notification.db
+            - Name: JWT_SECRET
+              Value: foodiehub-cloudnative-super-secure-jwt-secret-key-32bytes-min!
+            - Name: JWT_ALGORITHM
+              Value: HS256
+            - Name: LOG_LEVEL
+              Value: INFO
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: notification-service
+
+  # ==============================================================================
+  # 6. ECS Service
+  # ==============================================================================
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ECSTaskExecutionRole
+    Properties:
+      ServiceName: foodiehub-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+          Subnets: !Ref SubnetIds
+
+Outputs:
+  ClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+
+  ServiceName:
+    Description: ECS Service Name
+    Value: !GetAtt ECSService.Name
+
+  SecurityGroupId:
+    Description: Security Group ID
+    Value: !Ref ECSSecurityGroup

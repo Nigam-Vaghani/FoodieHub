@@ -1,0 +1,120 @@
+name: FoodieHub AWS ECR & ECS Continuous Deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+
+env:
+  AWS_REGION: ap-south-1
+  ECS_CLUSTER: foodiehub-cluster
+  ECS_SERVICE: foodiehub-service
+
+jobs:
+  test-and-verify:
+    name: Automated Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies & Run Microservice Test Suites
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/user-service/requirements.txt
+          pip install -r services/restaurant-service/requirements.txt
+          pip install -r services/order-service/requirements.txt
+          pip install -r services/delivery-service/requirements.txt
+          pip install -r services/notification-service/requirements.txt
+          python run_tests.py
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify Frontend TypeScript Compilation
+        working-directory: ./frontend
+        run: |
+          npm ci || npm install
+          npm run build
+
+  build-and-push-ecr:
+    name: Build & Push Images to Amazon ECR
+    needs: [test-and-verify]
+    runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.login-ecr.outputs.registry }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Images
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          SERVICES=("gateway" "frontend" "user-service" "restaurant-service" "order-service" "delivery-service" "notification-service")
+          
+          # Ensure ECR repositories exist
+          for SVC in "${SERVICES[@]}"; do
+            REPO_NAME="foodiehub/$SVC"
+            aws ecr describe-repositories --repository-names "$REPO_NAME" || \
+            aws ecr create-repository --repository-name "$REPO_NAME" --image-scanning-configuration scanOnPush=true
+          done
+
+          # Build and push gateway
+          docker build --platform linux/amd64 -t $REGISTRY/foodiehub/gateway:$IMAGE_TAG -t $REGISTRY/foodiehub/gateway:latest -f gateway/Dockerfile.ecs gateway/
+          docker push $REGISTRY/foodiehub/gateway:$IMAGE_TAG
+          docker push $REGISTRY/foodiehub/gateway:latest
+
+          # Build and push frontend
+          docker build --platform linux/amd64 -t $REGISTRY/foodiehub/frontend:$IMAGE_TAG -t $REGISTRY/foodiehub/frontend:latest -f frontend/Dockerfile.ecs frontend/
+          docker push $REGISTRY/foodiehub/frontend:$IMAGE_TAG
+          docker push $REGISTRY/foodiehub/frontend:latest
+
+          # Build and push backend services
+          for SVC in "user-service" "restaurant-service" "order-service" "delivery-service" "notification-service"; do
+            docker build --platform linux/amd64 -t $REGISTRY/foodiehub/$SVC:$IMAGE_TAG -t $REGISTRY/foodiehub/$SVC:latest -f services/$SVC/Dockerfile services/$SVC/
+            docker push $REGISTRY/foodiehub/$SVC:$IMAGE_TAG
+            docker push $REGISTRY/foodiehub/$SVC:latest
+          done
+
+  deploy-to-ecs:
+    name: Deploy to Amazon ECS Fargate
+    needs: [build-and-push-ecr]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Register New Task Definition & Update ECS Service
+        run: |
+          aws ecs register-task-definition --cli-input-json file://aws/ecs-task-definition.json
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --task-definition foodiehub-task --force-new-deployment

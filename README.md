@@ -92,6 +92,16 @@ docker compose ps
 
 # Stop all local processes:
 .\stop_local.ps1
+### Option 3: AWS ECS Fargate & Amazon ECR (Production Cloud)
+```powershell
+# 1. Build and push all 7 container images to Amazon ECR:
+.\scripts\deploy_to_ecr.ps1
+
+# 2. Deploy serverless ECS Fargate cluster, task definition & service:
+.\scripts\deploy_to_ecs.ps1
+
+# 3. Teardown / Cleanup when done:
+.\scripts\destroy_aws.ps1
 ```
 
 ---
@@ -103,15 +113,18 @@ docker compose ps
 python run_tests.py
 ```
 - **Automated GitHub Actions:** Every push to `main` runs backend tests, TypeScript build, and Docker Compose validation in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- **AWS Continuous Deployment:** Fully automated GitHub Actions workflow to build, push to ECR, and deploy to ECS in [.github/workflows/deploy-aws.yml](.github/workflows/deploy-aws.yml).
 - **Test Status:** 40/40 Passing (100% success rate).
 
 ---
 
 ## 📚 Detailed Documentation
 - [System Architecture & Diagrams](docs/architecture.md)
+- [AWS ECR & ECS Production Deployment Guide](docs/aws-ecs-deployment-guide.md)
 - [REST API Reference](docs/api-reference.md)
 - [Testing & Quality Assurance Guide](docs/testing.md)
 - [Viva Presentation & Demo Guide](docs/demo-guide.md)
+
 
 
 
