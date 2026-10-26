@@ -1,4 +1,4 @@
-# Stop all locally running FoodieHub services
+# Stop all locally running FoodieHub services. 
 Write-Host "Stopping all local FoodieHub services..." -ForegroundColor Yellow
 
 Get-Process -Name "python", "node" -ErrorAction SilentlyContinue | Where-Object {
